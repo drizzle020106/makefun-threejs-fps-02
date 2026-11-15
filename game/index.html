@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dustline Protocol — Tactical FPS</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #0e0f12; font-family: 'Segoe UI', Arial, sans-serif; color: #eee; }
+  #c { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(8, 9, 12, 0.82); z-index: 20; text-align: center; }
+  .overlay h1 { font-size: 52px; margin: 0 0 8px; letter-spacing: 3px; color: #e8a33d; }
+  .overlay h2 { font-size: 18px; font-weight: 400; color: #bbb; margin: 0 0 28px; }
+  .overlay p { max-width: 640px; color: #ccc; line-height: 1.6; font-size: 15px; }
+  .btn { background: #e8a33d; color: #111; border: none; padding: 14px 42px; font-size: 18px; font-weight: 700; cursor: pointer; border-radius: 4px; margin-top: 18px; }
+  .btn:hover { background: #f5b95c; }
+  .btn.ghost { background: transparent; color: #ddd; border: 1px solid #666; }
+  .keys { margin-top: 26px; font-size: 13px; color: #999; line-height: 1.9; }
+  .keys b { color: #ddd; background: #222; border: 1px solid #444; border-radius: 3px; padding: 1px 7px; margin: 0 2px; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; }
+  #crosshair { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 22px; height: 22px; }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #fff; }
+  #crosshair::before { left: 10px; top: 0; width: 2px; height: 22px; }
+  #crosshair::after { left: 0; top: 10px; width: 22px; height: 2px; }
+  #hitmark { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(45deg); width: 30px; height: 30px; opacity: 0; }
+  #hitmark::before, #hitmark::after { content: ''; position: absolute; background: #ff5a4d; }
+  #hitmark::before { left: 14px; top: 0; width: 2px; height: 30px; }
+  #hitmark::after { left: 0; top: 14px; width: 30px; height: 2px; }
+  #topbar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #timer { font-size: 30px; font-weight: 800; text-shadow: 0 2px 6px #000; }
+  #score { font-size: 14px; color: #ddd; text-shadow: 0 1px 4px #000; }
+  #alive { font-size: 12px; color: #bbb; text-shadow: 0 1px 4px #000; margin-top: 2px; }
+  #killfeed { position: fixed; top: 14px; right: 16px; text-align: right; font-size: 13px; color: #ddd; text-shadow: 0 1px 4px #000; line-height: 1.7; }
+  #bottombar { position: fixed; bottom: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+  #hpWrap { width: 280px; }
+  #hpBar { height: 14px; background: #333; border: 1px solid #666; border-radius: 2px; }
+  #hpFill { height: 100%; width: 100%; background: #37d67a; }
+  #hpText { font-size: 14px; margin-top: 4px; text-shadow: 0 1px 4px #000; }
+  #money { font-size: 26px; font-weight: 800; color: #7dd87d; text-shadow: 0 1px 4px #000; }
+  #ammoBox { text-align: right; }
+  #ammo { font-size: 30px; font-weight: 800; text-shadow: 0 1px 4px #000; }
+  #wname { font-size: 13px; color: #ccc; }
+  #banner { position: fixed; top: 22%; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 800; color: #ffd34d; text-shadow: 0 2px 10px #000; display: none; z-index: 15; text-align: center; }
+  #capWrap { position: fixed; top: 110px; left: 50%; transform: translateX(-50%); width: 260px; display: none; z-index: 11; }
+  #capLabel { font-size: 12px; text-align: center; color: #ffd34d; text-shadow: 0 1px 4px #000; margin-bottom: 4px; }
+  #capBar { height: 10px; background: #333; border: 1px solid #888; }
+  #capFill { height: 100%; width: 0%; background: #ffb020; }
+  #dmg { position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: 0; box-shadow: inset 0 0 120px 40px rgba(255, 0, 0, 0.55); transition: opacity 0.15s; }
+  #buy { position: fixed; inset: 0; display: none; background: rgba(8, 9, 12, 0.88); z-index: 20; padding: 40px; overflow: auto; }
+  #buy h2 { color: #e8a33d; margin-top: 0; }
+  #buyMoney { color: #7dd87d; font-size: 16px; margin-bottom: 18px; }
+  .buyItem { background: #1a1c22; border: 2px solid #444; border-radius: 6px; padding: 14px 18px; margin: 8px 0; cursor: pointer; max-width: 560px; display: flex; justify-content: space-between; }
+  .buyItem:hover { border-color: #e8a33d; }
+  .buyItem.equipped { border-color: #37d67a; }
+  .buyItem span { color: #bbb; }
+  #pause, #over { display: none; }
+</style>
+<script>
+  // Surface any load/runtime error in the title so headless checks can see it.
+  window.addEventListener('error', function (e) { document.title = 'GAME_ERROR: ' + (e.message || 'unknown'); });
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="dmg"></div>
+
+<div id="hud">
+  <div id="crosshair"></div>
+  <div id="hitmark"></div>
+  <div id="topbar">
+    <div id="timer">1:40</div>
+    <div id="score"></div>
+    <div id="alive"></div>
+  </div>
+  <div id="killfeed"></div>
+  <div id="capWrap"><div id="capLabel"></div><div id="capBar"><div id="capFill"></div></div></div>
+  <div id="bottombar">
+    <div id="hpWrap"><div id="hpBar"><div id="hpFill"></div></div><div id="hpText"></div></div>
+    <div id="money"></div>
+    <div id="ammoBox"><div id="ammo"></div><div id="wname"></div></div>
+  </div>
+</div>
+<div id="banner"></div>
+
+<div id="menu" class="overlay">
+  <h1 id="menuTitle">Dustline Protocol</h1>
+  <h2 id="mapSub"></h2>
+  <p>A round-based tactical FPS in the Counter-Strike style — original map, art and names.
+  You lead <b id="mapName"></b> against bot squads: win rounds by eliminating the enemy team
+  or capturing the active site. Earn money for kills and round wins, and spend it on better guns between rounds.</p>
+  <button class="btn" id="startBtn">▶ &nbsp;DEPLOY</button>
+  <div class="keys">
+    <b>W A S D</b> move &nbsp; <b>Mouse</b> aim &nbsp; <b>Click</b> shoot &nbsp; <b>R</b> reload<br>
+    <b>1–4</b> switch weapon &nbsp; <b>B</b> buy menu &nbsp; <b>Shift</b> sprint &nbsp; <b>P</b> pause<br>
+    Right-click to aim a sniper scope. First team to 5 round wins takes the match.
+  </div>
+</div>
+
+<div id="buy">
+  <h2>BUY MENU — spend your round money</h2>
+  <div id="buyMoney"></div>
+  <div id="buyList"></div>
+  <button class="btn" id="closeBuy">CLOSE (B)</button>
+</div>
+
+<div id="pause" class="overlay">
+  <h1>PAUSED</h1>
+  <button class="btn" id="resumeBtn">RESUME</button>
+  <button class="btn ghost" id="restartBtn">RESTART MATCH</button>
+</div>
+
+<div id="over" class="overlay">
+  <h1 id="overTitle"></h1>
+  <h2 id="overScore"></h2>
+  <button class="btn" id="overRestart">PLAY AGAIN</button>
+</div>
+
+<script type="module" src="./game.js"></script>
+</body>
+</html>
